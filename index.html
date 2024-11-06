@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Match the Flags!</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <style>
+        body {
+            text-align: center;
+            background-color: grey;
+            font-family: Arial, sans-serif;
+        }
+
+        #starter {
+            margin: 20px;
+        }
+
+        #board_size {
+            padding: 1rem;
+            display: none;
+        }
+
+        #finish {
+            display: none;
+            padding: 1rem;
+        }
+
+        #title {
+            font-size: 2rem;
+            color: black;
+        }
+
+        #description {
+            font-size: 1.2rem;
+            color: black;
+        }
+
+        .form-check-inline {
+            margin: 0.5rem;
+        }
+
+        .form-check-input {
+            margin-right: 0.5rem;
+        }
+
+        .form-check-label {
+            font-size: 1rem;
+        }
+
+        .container {
+            max-width: 90%;
+            margin: 20px auto;
+        }
+
+        .container .row {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .container .col {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-sizing: border-box;
+        }
+        
+        @media (max-width: 768px) {
+            #board {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        @media (min-width: 769px) {
+            #board {
+                grid-template-columns: repeat(6, 1fr);
+            }
+        }
+
+        .cell {
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 2px solid black;
+            padding: 10px;
+            margin: 5px;
+            transition: background-color 0.3s ease, transform 0.3s ease;
+            max-width: 120px;
+            height: auto;
+            box-sizing: border-box;
+            overflow: hidden;
+            font-size: calc(12px + 1vw);
+            min-width: 100px;
+            min-height: 100px;
+            text-align: center;
+        }
+
+        .cell:hover {
+            background-color: #accbea;
+            transform: scale(1.05);
+        }
+
+        .cell img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .cell p,
+        .cell strong {
+            margin: 0;
+            font-size: 1rem;
+            text-align: center;
+        }
+
+        .cell div {
+            display: flex;
+            justify-content: center;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .font {
+            font-size: 1rem;
+            text-align: center;
+            padding: 2px;
+            line-height: 1.5;
+        }
+
+        .selected {
+            color: white;
+            border: solid 2px yellow;
+            background-color: rgba(255, 255, 0, 0.2);
+        }
+
+        .matched {
+            border: 2px solid green;
+            background-color: #4ebf4e;
+        }
+
+        .disabled {
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        #match_number {
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+        }
+
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn-secondary:hover {
+            background-color: #5a6268;
+        }
+    </style><script>
+        $(document).ready(function() {
+            //variables due to change during game/code
+            let cachedData = {};
+            let regionData;
+            let countryGrid = [];
+            let numOfMatches = 0;
+            let congratNum = 10
+            let displayMatches = () => {
+                {$('#match_number').text(`Number of Matches: ${numOfMatches}`);}
+
+                if(numOfMatches == congratNum){
+                    $('#match_number').text('Congratulations! You matched all the flags!');
+                }
+                };
+            let selectedCells = [];
+            const $resultGrid = $('#result_grid');
+            const $finish = $('#finish');
+            const $boardSize = $('#board_size')
+
+            //Helper functions
+            function shuffleArray(array) { //to shuffle the region data wherever applicable
+                for(let i = array.length -1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i +1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+            }
+            function clearGameState() { //resets game to ensure funcitonality
+            $('#board').empty();
+            $resultGrid.empty().hide();
+            $finish.hide();
+            numOfMatches = 0;
+            displayMatches();
+            selectedCells = [];
+            $('.cell').off('click');
+            }
+            function createResultHTML(flagContent, countryContent) { //creates the answer result grid in the correct format
+                return `<div class="col cell border" data-country-code="${countryContent.countryCode}">
+                    <div class="content-wrapper">
+                        <div class="flag">${flagContent}</div>
+                        <div class="country">${countryContent}</div>
+                    </div>
+                </div>`;
+            }
+
+            function appendToElement(selector, content){ //helper function for appending elements
+                $(selector).append(content);
+            }
+
+            //Fetch regions for radio buttons
+            $.getJSON(`https://www.cs.kent.ac.uk/people/staff/yh/api/country-data/countries/regions`).done(function(data){
+                let regionButtons = data.map(region =>
+                region !== "Antarctic" ?
+                `<input type="radio" id="${region}" name="regions" value="${region}" class="form-check-input">
+                <label for="${region}" class="form-check-label">${region}</label>` :
+                ''
+                ).join('');
+                appendToElement('#regionRadioBttns', regionButtons);
+            })
+            .fail(function() {
+                appendToElement('#regionRadioBttns', `<p>Error fetching regions</p>`);
+            });
+
+            //Region radio button functionality
+            $('#starter').on('change', 'input[name="regions"]', function(){
+                clearGameState();
+                if($boardSize.is(':hidden')) $boardSize.toggle(); //display board size if it hasn't already been displayed
+
+                let selectedRegion = $(this).val();
+
+                if (cachedData[selectedRegion]) { //use cached data instead of API call
+                regionData = cachedData[selectedRegion];
+                shuffleArray(regionData);
+                }
+                else { //get data from API
+                $.getJSON(`https://www.cs.kent.ac.uk/people/staff/yh/api/country-data/countries/region/${selectedRegion}`).done(function(data) {
+                    regionData = data;
+                    shuffleArray(regionData);
+                    cachedData[selectedRegion] = regionData;
+                })}
+            })
+
+            //When user selects grid size -> create css grid and populate with flags
+            $('#board_size input[name="grid_size"]').on('click', function() {
+                clearGameState();
+                $finish.show();
+                const board = $('<div id="board" class="container"></div>');
+                $boardSize.after(board);
+
+                const selectedSize = $(this).val();
+                let rows, cols;
+                countryGrid = [];
+                countryPairs = [];
+
+                shuffleArray(regionData);
+                let selectedCountries = regionData.slice(0, selectedSize === '4x2' ? 4 : 8);
+
+                if (selectedSize === '4x2') {
+                    rows = 2;
+                    cols = 4;
+                    congratNum = 4;
+                } else if (selectedSize === "4x4") {
+                    rows = 4;
+                    cols = 4;
+                    congratNum = 8;
+                }
+
+                selectedCountries.forEach(country => {
+                    const countryCapital = {
+                        type: 'country-capital',
+                        content: `<div class="content-wrapper font"><strong>${country.name}</strong><p>Capital: </p>${country.capital}</div>`,
+                        countryCode: country.code
+                    };
+
+                    const flag = {
+                        type: 'flag',
+                        content: `<div class="content-wrapper"><img src="${country.flag}" alt="${country.name}" class="img-fluid" style="max-width: 100%; height: auto;" /></div>`,
+                        countryCode: country.code
+                    };
+
+                    countryPairs.push([countryCapital, flag]);
+                });
+
+                countryPairs.forEach(pair => {
+                    countryGrid.push(pair[0], pair[1]);
+                });
+
+                shuffleArray(countryGrid);
+
+                for (let row = 0; row < rows; row++) {
+                    const rowDiv = $('<div class="row"></div>');
+                    for (let col = 0; col < cols; col++) {
+                        const index = row * cols + col;
+                        if (index < countryGrid.length) {
+                            const contr = countryGrid[index];
+                            appendToElement(rowDiv, `<div class="col cell border" data-country-code="${contr.countryCode}">${contr.content}</div>`);
+                        }
+                    }
+                    appendToElement(board, rowDiv);
+                }
+            });
+
+            $('#answer_button').on('click', function() {
+                $resultGrid.empty().show();
+                const resultRow = $('<div id="result_row" class="row border"></div>');
+                countryPairs.forEach(pair => {
+                    const [countryItem, flagItem] = pair;
+                const resultHTML = createResultHTML(flagItem.content, countryItem.content);
+                resultRow.append(resultHTML);
+                });
+                $resultGrid.append(resultRow);
+            });
+
+            $(document).on('click', '#board .cell', function() {
+            const $cell = $(this);
+            if ($cell.hasClass('matched') || $cell.hasClass('disabled') || $cell.hasClass('selected')) return;
+            if (selectedCells.length < 2 && !$cell.hasClass('selected')) {
+                $cell.addClass('selected');
+                selectedCells.push($cell);
+            }
+            if (selectedCells.length === 2) {
+                const [firstCell, secondCell] = selectedCells;
+                const firstCountryCode = firstCell.data('country-code');
+                const secondCountryCode = secondCell.data('country-code');
+
+                if (firstCountryCode === secondCountryCode) {
+                firstCell.addClass('matched').addClass('disabled');
+                secondCell.addClass('matched').addClass('disabled');
+                numOfMatches++;
+                displayMatches();
+
+                if (numOfMatches === congratNum) {
+                    $('#match_number').text('Congratulations! You matched all the flags!');
+                }
+            } else {
+                setTimeout(() => {
+                firstCell.removeClass('selected');
+                secondCell.removeClass('selected');
+                }, 1000);
+                }
+                selectedCells = [];
+            }
+            });
+        });
+    </script>
+</head><body>
+    <div id="starter"> <!--the title and basic information-->
+        <h1 id="title">Match countries with their flags</h1>
+        <p id="description">Select a region and match the flags to the countries!</p>
+        <div id="regionRadioBttns" class="formcheck form-check-inline"></div><br>
+        <div id="board_size" style="padding: 1rem;"> <!--board size-->
+            <h2 id="board_size_title">Choose the board size:</h2><!--toggle buttons for grid size-->
+            <input type="radio" id="4x2" name="grid_size" value="4x2" class="form-check-input"><label for="4x2" class="form-check-label">4x2</label>
+            <input type="radio" id="4x4" name="grid_size" value="4x4" class="form-check-input"><label for="4x4" class="form-check-label">4x4</label>
+        </div>
+    </div><br>
+    <div id="finish"><!--This div will be for the message below the game and the answer button-->
+        <p id="match_number">Number of matches: </p>
+        <button id="answer_button" name="answer" value="Show Answer" class="btn btn-secondary"><label for="answer_button">Show Answer</label>
+    </div>
+    <div class="container" id="result_grid"></div> <!--result grid the correct answers-->
+</body></html>
